@@ -38,4 +38,6 @@ export const api = {
     request('POST', '/api/rehearsals', { device_id: deviceId, to_circuit_id: toCircuitId }),
   confirmRehearsal: (token) => request('POST', `/api/rehearsals/${token}/confirm`),
   discardRehearsal: (token) => request('DELETE', `/api/rehearsals/${token}`),
+
+  outagePreview: (outages) => request('POST', '/api/outages/preview', { outages }),
 };
