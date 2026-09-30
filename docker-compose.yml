@@ -1,0 +1,29 @@
+services:
+  power-rehearsal:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: power-rehearsal:latest
+    container_name: power-rehearsal
+    restart: unless-stopped
+    ports:
+      # 宿主机端口:容器端口。宿主机 3000 被占用时改左侧即可，如 "8080:3000"
+      - "${PUBLISH_PORT:-3000}:3000"
+    environment:
+      # 监听端口（容器内，一般无需修改）
+      PORT: 3000
+      # SQLite 数据文件位置（挂载到命名卷持久化）
+      DB_PATH: /data/power.db
+      # 首次启动且库为空时写入演示数据：1 开启 / 0 关闭
+      SEED_DEMO: "1"
+      TZ: Asia/Shanghai
+    volumes:
+      - power-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 4s
+      retries: 5
+
+volumes:
+  power-data:

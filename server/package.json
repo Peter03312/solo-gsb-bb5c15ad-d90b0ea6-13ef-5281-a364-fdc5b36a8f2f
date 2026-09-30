@@ -1,0 +1,19 @@
+{
+  "name": "power-rehearsal-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "活动配电负载排演网站 - 后端 API",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "express": "^4.21.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
