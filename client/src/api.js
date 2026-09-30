@@ -38,4 +38,7 @@ export const api = {
     request('POST', '/api/rehearsals', { device_id: deviceId, to_circuit_id: toCircuitId }),
   confirmRehearsal: (token) => request('POST', `/api/rehearsals/${token}/confirm`),
   discardRehearsal: (token) => request('DELETE', `/api/rehearsals/${token}`),
+
+  // 停电检修预演（只读）：windows = [{ circuit_id, start, end }]
+  outageRehearse: (windows) => request('POST', '/api/outages/rehearse', { windows }),
 };

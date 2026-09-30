@@ -6,6 +6,7 @@ import HttpError from './httpError.js';
 import circuitsRouter from './routes/circuits.js';
 import devicesRouter from './routes/devices.js';
 import rehearsalsRouter from './routes/rehearsals.js';
+import outagesRouter from './routes/outages.js';
 import stateRouter from './routes/state.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -26,6 +27,7 @@ export function createApp() {
   app.use('/api/circuits', circuitsRouter);
   app.use('/api/devices', devicesRouter);
   app.use('/api/rehearsals', rehearsalsRouter);
+  app.use('/api/outages', outagesRouter);
   app.use('/api', stateRouter);
 
   // 统一业务错误响应：{ error: { code, message, details } }

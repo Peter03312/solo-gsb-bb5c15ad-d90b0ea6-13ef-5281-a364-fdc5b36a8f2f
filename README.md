@@ -22,6 +22,14 @@
 - **非法输入明确报错且不产生部分配置**：环路（把节点挂到自己的子孙下）、缺失回路、
   非正功率、非法时段（空、格式错、起点不早于终点）都会返回中文错误；所有写操作都包在
   SQLite 事务中，失败即回滚。
+- **停电检修预演（只读，不落库）**：为多个配电箱 / 末级回路分别填写停电起止窗口：
+  1. 停电作用于所选节点及其 **全部后代设备**；
+  2. 只统计设备 **原运行时段与停电窗口的交集**，时间沿用左闭右开 `[start,end)`；
+  3. 同一设备受祖先、子节点或互相重叠的多个窗口影响时， **先合并失供区间，不重复计入**；
+  4. 结果按时间段给出每个回路的 **原负载 / 剩余供电负载 / 失供负载**，
+     并列出受影响设备与累计失供时长；未受影响分支保持原负载；
+  5. 预演不改变配电树、设备接线与运行时段，也不影响未确认的改接预演令牌；
+     空方案、缺失回路、起止时间缺失或非法均明确报错（400），不生成结果。
 - 设备只能接入 **末级回路**（无子节点的节点），已挂设备的节点不能再作为配电箱挂下级。
 
 ## 一键启动（推荐，Docker Compose）
@@ -101,6 +109,12 @@ DB_PATH=./data/power.db npm start          # 打开 http://localhost:3000
    - 若任一祖先回路会超额，整次改接被拒绝并列出回路 / 时段 / 峰值，配置不变；
    - 通过后列出受影响回路的改接后峰值，点击「② 确认改接」生效；
    - 预演后配置一旦变化，确认按钮自动失效，需要重新预演。
+5. **停电预演** 页：「+ 增加停电节点」为一个或多个配电箱 / 末级回路填写停电起止时间
+   →「预演供电影响」；
+   - 顶部汇总受影响回路/设备数、失供负载峰值与归并后的停电窗口；
+   - 中部列出每台受影响设备的失供区间（已合并去重）与累计失供时长；
+   - 下部逐回路、逐时间段列出 **原负载 / 剩余供电 / 失供** 三列；未受影响分支折叠展示、
+     数值与原负载时间线一致；预演全程只读，不改动任何配置。
 
 ## HTTP API（均返回 JSON）
 
@@ -116,6 +130,64 @@ DB_PATH=./data/power.db npm start          # 打开 http://localhost:3000
 | POST | `/api/rehearsals` | 预演改接 `{device_id, to_circuit_id}`；超额返回 422 与明细 |
 | POST | `/api/rehearsals/:token/confirm` | 确认改接；配置已变返回 410 `STALE` |
 | DELETE | `/api/rehearsals/:token` | 放弃预演 |
+| POST | `/api/outages/rehearse` | 停电检修预演（只读）`{windows:[{circuit_id,start,end}]}` |
+
+### 停电预演 API 调用示例
+
+时间格式与运行时段一致：分钟精度 `YYYY-MM-DDTHH:MM`（秒精度亦可），左闭右开。
+`circuit_id` 可以是配电箱也可以是末级回路；同一节点可给多个窗口，祖先 / 后代 /
+重叠窗口都会自动合并。
+
+```bash
+curl -X POST http://localhost:3000/api/outages/rehearse \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "windows": [
+      {"circuit_id": 2, "start": "2026-10-01T20:00", "end": "2026-10-01T21:00"},
+      {"circuit_id": 7, "start": "2026-10-01T20:30", "end": "2026-10-01T21:30"}
+    ]
+  }'
+```
+
+成功返回 `201`（字段含义）：
+
+```jsonc
+{
+  "config_version": 1,            // 预演基于的配置版本（只读计算，版本不会自增）
+  "range": { "start": "…16:00:00", "end": "…23:00:00" },
+  "windows": [                    // 按节点归并后的停电窗口（带时长，便于核对）
+    { "circuit_id": 2, "name": "灯光分箱 LP", "path": "主配电箱 AP / 灯光分箱 LP",
+      "periods": [{ "start": "…20:00:00", "end": "…21:00:00",
+                   "duration_minutes": 60, "duration_text": "1小时" }] }
+  ],
+  "circuits": [                   // 按配电树 DFS 顺序，未受影响回路 affected=false
+    { "id": 1, "name": "主配电箱 AP", "rated_power": 60000,
+      "peak": 22300, "peak_lost": 15500, "affected": true,
+      "timeline": [                // 在原负载时间线事件点上切出的分段
+        { "start": "…20:00:00", "end": "…21:00:00",
+          "load": 22300,           // 原负载（与 /api/load 同刻一致）
+          "remaining_load": 6800,  // 剩余供电负载
+          "lost_load": 15500 }     // 失供负载（沿树汇总全部后代失供设备）
+      ] }
+  ],
+  "affected_devices": [           // 仅列实际有失供区间的设备，失供区间已合并去重
+    { "id": 7, "name": "舞台返听", "power_w": 2500, "circuit_id": 7,
+      "path": "主配电箱 AP / 音响分箱 SP / 监听回路 S2",
+      "outage_periods": [{ "start": "…20:30:00", "end": "…21:30:00",
+                          "duration_minutes": 60, "duration_text": "1小时" }],
+      "total_lost_minutes": 60, "total_lost_text": "1小时" }
+  ],
+  "totals": { "affected_circuits": 4, "affected_devices": 4, "peak_lost_load": 15500 }
+}
+```
+
+说明：
+
+- 窗口与所有设备运行时段都不相交时属 **合法方案**：返回 `201`，
+  `affected=false`、失供负载为 0（不是错误）。
+- 错误均不生成结果，常见为 `400`：`EMPTY_PLAN`（空方案 / 缺 `windows`）、
+  `MISSING_CIRCUIT`（节点不存在）、`INVALID_WINDOW`（缺起止或起点不早于终点）、
+  `INVALID_TIME`（时间格式非法）；库中没有任何设备运行时段时返回 `422 NO_TIMELINE`。
 
 ## 目录结构
 
@@ -127,8 +199,9 @@ DB_PATH=./data/power.db npm start          # 打开 http://localhost:3000
 │       ├── index.js        # 入口/初始化
 │       ├── db.js           # 建表、配置版本（预演失效机制）
 │       ├── load.js         # 负载/超限区间计算（事件扫描）
+│       ├── outage.js       # 停电影响计算（窗口合并/交集/剩余与失供负载）
 │       ├── validators.js   # 功率/时段校验与重叠合并
 │       └── routes/
 └── client/                 # React + Vite
-    └── src/components/     # 配电树 / 设备时段 / 负载时间线 / 改接预演
+    └── src/components/     # 配电树 / 设备时段 / 负载时间线 / 改接预演 / 停电预演
 ```

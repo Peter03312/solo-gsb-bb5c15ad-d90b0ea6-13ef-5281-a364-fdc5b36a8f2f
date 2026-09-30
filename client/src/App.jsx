@@ -4,12 +4,14 @@ import TreeTab from './components/TreeTab.jsx';
 import DevicesTab from './components/DevicesTab.jsx';
 import LoadTab from './components/LoadTab.jsx';
 import RehearseTab from './components/RehearseTab.jsx';
+import OutageTab from './components/OutageTab.jsx';
 
 const TABS = [
   { key: 'load', label: '负载时间线' },
   { key: 'tree', label: '配电树' },
   { key: 'devices', label: '设备与时段' },
   { key: 'rehearse', label: '改接预演' },
+  { key: 'outage', label: '停电预演' },
 ];
 
 export default function App() {
@@ -90,6 +92,7 @@ export default function App() {
                 setRehearsal={setRehearsal}
               />
             )}
+            {tab === 'outage' && <OutageTab state={state} />}
           </>
         )}
       </main>
